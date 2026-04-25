@@ -28,7 +28,9 @@ class Packet(SQLModel, table=True):
     dst_ip: Optional[str] = None
     src_port: Optional[int] = None
     dst_port: Optional[int] = None
-    data: Optional[str] = None
+    data: Optional[str] = None     # raw packet hex (first 256 B)
+    payload: Optional[str] = None  # transport-layer payload hex (full)
+    seq_num: Optional[int] = None  # TCP sequence number
 
 
 sqlite_file_name = "fartsuite.db"

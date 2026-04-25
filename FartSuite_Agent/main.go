@@ -39,7 +39,9 @@ type PacketData struct {
 	DstIP     string  `json:"dst_ip"`
 	SrcPort   int     `json:"src_port"`
 	DstPort   int     `json:"dst_port"`
-	Data      string  `json:"data"`
+	Data      string  `json:"data"`    // raw packet hex (first 256 B, for live table)
+	Payload   string  `json:"payload"` // transport-layer payload hex (full)
+	SeqNum    uint32  `json:"seq_num"` // TCP sequence number
 }
 
 // ── State ─────────────────────────────────────────────────────
@@ -251,12 +253,15 @@ func extractPacket(pkt gopacket.Packet) PacketData {
 		case *layers.TCP:
 			pd.SrcPort = int(v.SrcPort)
 			pd.DstPort = int(v.DstPort)
+			pd.SeqNum = uint32(v.Seq)
+			pd.Payload = hex.EncodeToString(v.Payload)
 			if pd.Protocol == "" {
 				pd.Protocol = "TCP"
 			}
 		case *layers.UDP:
 			pd.SrcPort = int(v.SrcPort)
 			pd.DstPort = int(v.DstPort)
+			pd.Payload = hex.EncodeToString(v.Payload)
 			if pd.Protocol == "" {
 				pd.Protocol = "UDP"
 			}

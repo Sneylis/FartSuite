@@ -189,6 +189,84 @@ label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px
         </div>
       </div>
 
+      <!-- Streams list panel -->
+      <div class="card hidden" id="panel-streams">
+        <div class="card-header">
+          <span id="streams-title">Streams</span>
+          <button class="btn btn-sm" onclick="closeStreams()">← Back</button>
+        </div>
+        <div class="card-body" id="streams-list" style="padding:0;"></div>
+      </div>
+
+      <!-- Stream detail + AI + Responder panel -->
+      <div class="card" id="panel-stream-detail" style="display:none;flex:1;flex-direction:column;">
+        <div class="card-header">
+          <span id="stream-detail-title">Stream</span>
+          <div class="flex gap-8">
+            <button class="btn btn-sm" onclick="openResponder()">⚡ Responder</button>
+            <button class="btn btn-sm btn-primary" id="btn-ai-analyze" onclick="analyzeWithAI()">✨ AI Analyze</button>
+            <button class="btn btn-sm" onclick="closeStreamDetail()">← Streams</button>
+          </div>
+        </div>
+        <!-- hex dump -->
+        <div style="overflow-y:auto;flex:1;padding:12px;">
+          <pre id="stream-hex-dump" style="font-size:11px;line-height:1.6;white-space:pre;color:var(--text);"></pre>
+        </div>
+        <!-- AI output (hidden until analyze clicked) -->
+        <div id="ai-panel" class="hidden" style="border-top:1px solid var(--border);padding:12px;max-height:300px;overflow-y:auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;font-weight:600;color:var(--accent);">✨ AI Analysis — <span id="ai-model-name"></span></span>
+            <div class="flex gap-8">
+              <input id="ai-followup" type="text" placeholder="Ask a follow-up question..."
+                     style="width:300px;font-size:12px;"
+                     onkeydown="if(event.key==='Enter')analyzeWithAI(document.getElementById('ai-followup').value)">
+              <button class="btn btn-sm" onclick="analyzeWithAI(document.getElementById('ai-followup').value)">Send</button>
+              <button class="btn btn-sm" onclick="hide('ai-panel')">✕</button>
+            </div>
+          </div>
+          <pre id="ai-output" style="font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--text);"></pre>
+        </div>
+      </div>
+
+      <!-- Responder panel -->
+      <div class="card" id="panel-responder" style="display:none;flex:1;flex-direction:column;">
+        <div class="card-header">
+          <span>⚡ Responder</span>
+          <button class="btn btn-sm" onclick="closeResponder()">← Stream</button>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:12px;flex:1;">
+          <div class="flex gap-8" style="align-items:flex-end;">
+            <div class="form-group" style="margin:0;flex:1;">
+              <label>Target IP</label>
+              <input id="resp-ip" type="text" placeholder="192.168.1.1">
+            </div>
+            <div class="form-group" style="margin:0;width:90px;">
+              <label>Port</label>
+              <input id="resp-port" type="number" placeholder="8080">
+            </div>
+            <div class="form-group" style="margin:0;width:80px;">
+              <label>Timeout (s)</label>
+              <input id="resp-timeout" type="number" value="10" min="1" max="60">
+            </div>
+            <button class="btn btn-primary" id="btn-resp-send" onclick="sendResponder()">▶ Send</button>
+          </div>
+          <div style="display:flex;gap:12px;flex:1;min-height:0;">
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+              <label style="font-size:12px;color:var(--muted);">Request (hex — spaces/newlines ignored)</label>
+              <textarea id="resp-request" spellcheck="false"
+                style="flex:1;font-family:monospace;font-size:11px;background:var(--bg3);color:var(--accent);
+                       border:1px solid var(--border);border-radius:4px;padding:8px;resize:none;min-height:200px;"></textarea>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+              <label style="font-size:12px;color:var(--muted);">Response <span id="resp-info" style="color:var(--muted);"></span></label>
+              <pre id="resp-response" style="flex:1;font-size:11px;background:var(--bg3);color:var(--green);
+                   border:1px solid var(--border);border-radius:4px;padding:8px;overflow:auto;
+                   white-space:pre-wrap;min-height:200px;"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Packet viewer -->
       <div class="card" id="packet-panel">
         <div class="card-header">
@@ -274,6 +352,14 @@ async function openProject(id) {
   document.getElementById('iface-select').innerHTML = '<option value="">— check agent first —</option>';
   document.getElementById('btn-start-cap').disabled = true;
   document.getElementById('filter-ip').value = '';
+
+  // Reset panels
+  hide('panel-streams');
+  document.getElementById('panel-stream-detail').style.display = 'none';
+  document.getElementById('panel-responder').style.display = 'none';
+  show('packet-panel');
+  currentCaptureId = null;
+  currentStreamKey = null;
 
   clearPacketTable();
   hide('live-badge');
@@ -401,7 +487,8 @@ async function loadCaptures() {
             ${isRunning
               ? `<button class="btn btn-sm" onclick="connectLive(${c.id})">Live</button>
                  <button class="btn btn-sm btn-danger" onclick="stopCapture(${c.id})">Stop</button>`
-              : `<button class="btn btn-sm" onclick="viewDump(${c.id})">View</button>`
+              : `<button class="btn btn-sm" onclick="viewDump(${c.id})">View</button>
+                 <button class="btn btn-sm" style="background:var(--bg3);border-color:var(--accent);color:var(--accent);" onclick="viewStreams(${c.id})">Streams</button>`
             }
             <button class="btn btn-sm btn-danger" onclick="deleteCapture(${c.id})" title="Delete capture and all packets">✕</button>
           </div>
@@ -582,6 +669,274 @@ function escAttr(s) {
 }
 function show(id) { document.getElementById(id).classList.remove('hidden'); }
 function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ── Streams ───────────────────────────────────────────────────
+
+let currentCaptureId = null;
+let currentStreamKey = null;
+let currentStreamData = null;
+let aiAbortController = null;
+
+async function viewStreams(captureId) {
+  currentCaptureId = captureId;
+  currentStreamKey = null;
+  closeLiveWs();
+  hide('packet-panel');
+  document.getElementById('panel-stream-detail').style.display = 'none';
+  document.getElementById('panel-responder').style.display = 'none';
+
+  const panel = document.getElementById('panel-streams');
+  panel.classList.remove('hidden');
+  document.getElementById('streams-title').textContent = `Streams — Capture #${captureId}`;
+  document.getElementById('streams-list').innerHTML =
+    '<div style="padding:16px;color:var(--muted);">Loading streams…</div>';
+
+  try {
+    const streams = await api(`/api/captures/${captureId}/streams`);
+    if (!streams.length) {
+      document.getElementById('streams-list').innerHTML =
+        '<div style="padding:16px;color:var(--muted);">No TCP/UDP streams found. Make sure the agent is rebuilt with payload capture support.</div>';
+      return;
+    }
+    document.getElementById('streams-list').innerHTML = streams.map((s, i) => `
+      <div class="capture-row" style="cursor:pointer;" onclick="viewStreamDetail('${esc(s.key)}')">
+        <div style="flex:1;min-width:0;">
+          <div style="font-family:monospace;font-size:12px;color:var(--accent);">
+            ${esc(s.endpoint_a)} ↔ ${esc(s.endpoint_b)}
+          </div>
+          <div class="capture-meta">
+            ${esc(s.protocol || '?')} &nbsp;·&nbsp;
+            ${s.packet_count} packets &nbsp;·&nbsp;
+            ${s.payload_bytes} payload bytes
+          </div>
+        </div>
+        <div class="flex gap-8" style="align-items:center;flex-shrink:0;">
+          <button class="btn btn-sm" onclick="event.stopPropagation();viewStreamDetail('${esc(s.key)}')">View</button>
+          <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();viewStreamDetail('${esc(s.key)}',true)">✨ AI</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    document.getElementById('streams-list').innerHTML =
+      `<div style="padding:16px;" class="alert alert-error">${esc(e.message)}</div>`;
+  }
+}
+
+function closeStreams() {
+  hide('panel-streams');
+  show('packet-panel');
+  currentCaptureId = null;
+}
+
+async function viewStreamDetail(streamKey, autoAnalyze = false) {
+  currentStreamKey = streamKey;
+  hide('panel-streams');
+  hide('ai-panel');
+  document.getElementById('panel-responder').style.display = 'none';
+  document.getElementById('panel-stream-detail').style.display = 'flex';
+
+  document.getElementById('stream-detail-title').textContent =
+    `Stream: ${streamKey.replace('__', ' ↔ ')}`;
+  document.getElementById('stream-hex-dump').textContent = 'Loading…';
+
+  try {
+    const stream = await api(
+      `/api/captures/${currentCaptureId}/stream?key=${encodeURIComponent(streamKey)}`
+    );
+    currentStreamData = stream;
+
+    // Pre-fill Responder target from stream key (ep_a = smaller endpoint)
+    const ep_a = stream.endpoint_a;
+    const lastColon = ep_a.lastIndexOf(':');
+    document.getElementById('resp-ip').value   = ep_a.substring(0, lastColon);
+    document.getElementById('resp-port').value = ep_a.substring(lastColon + 1);
+
+    renderHexDump(stream.segments);
+    if (autoAnalyze) analyzeWithAI();
+  } catch (e) {
+    document.getElementById('stream-hex-dump').textContent = `Error: ${e.message}`;
+  }
+}
+
+function renderHexDump(segments) {
+  const dump = document.getElementById('stream-hex-dump');
+  const lines = [];
+
+  for (const seg of segments) {
+    if (!seg.payload_hex) continue;
+    const dir   = seg.direction === 'c2s' ? '→' : '←';
+    const color = seg.direction === 'c2s' ? '#79c0ff' : '#56d364';
+    const ts    = new Date(seg.timestamp * 1000).toISOString().slice(11, 23);
+
+    lines.push(`\x1b[dir=${seg.direction}]── ${dir} ${ts} (${seg.payload_hex.length / 2} bytes) ${'─'.repeat(30)}`);
+
+    const bytes = [];
+    for (let i = 0; i < seg.payload_hex.length; i += 2)
+      bytes.push(parseInt(seg.payload_hex.substr(i, 2), 16));
+
+    for (let i = 0; i < bytes.length; i += 16) {
+      const row   = bytes.slice(i, i + 16);
+      const off   = i.toString(16).padStart(4, '0');
+      const hex   = row.map(b => b.toString(16).padStart(2, '0')).join(' ').padEnd(47);
+      const ascii = row.map(b => b >= 32 && b < 127 ? String.fromCharCode(b) : '.').join('');
+      lines.push(`  [${seg.direction}]${off}  ${hex}  ${ascii}`);
+    }
+    lines.push('');
+  }
+
+  // Render with colored spans
+  const pre = document.getElementById('stream-hex-dump');
+  pre.innerHTML = '';
+  for (const line of lines) {
+    const span = document.createElement('span');
+    const isc2s = line.includes('[c2s]') || line.includes('dir=c2s');
+    span.style.color = isc2s ? '#79c0ff' : '#56d364';
+    span.textContent = line.replace(/\[(c2s|s2c)\]|dir=(c2s|s2c)/g, '') + '\n';
+    pre.appendChild(span);
+  }
+
+  if (lines.length === 0)
+    pre.textContent = '(no payload data in this stream)';
+}
+
+function closeStreamDetail() {
+  document.getElementById('panel-stream-detail').style.display = 'none';
+  hide('ai-panel');
+  if (aiAbortController) { aiAbortController.abort(); aiAbortController = null; }
+  viewStreams(currentCaptureId);
+}
+
+// ── AI Analysis ───────────────────────────────────────────────
+
+async function analyzeWithAI(context = '') {
+  if (!currentCaptureId || !currentStreamKey) return;
+  if (aiAbortController) aiAbortController.abort();
+  aiAbortController = new AbortController();
+
+  const btn = document.getElementById('btn-ai-analyze');
+  btn.disabled = true;
+  btn.textContent = '⏳ Analyzing…';
+
+  document.getElementById('ai-model-name').textContent = 'qwen2.5-coder:14b';
+  document.getElementById('ai-output').textContent = '';
+  show('ai-panel');
+
+  try {
+    const resp = await fetch('/api/ai/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        capture_id: currentCaptureId,
+        stream_key: currentStreamKey,
+        context: context || null,
+      }),
+      signal: aiAbortController.signal,
+    });
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf     = '';
+    const out     = document.getElementById('ai-output');
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') break;
+        try {
+          const obj = JSON.parse(payload);
+          if (obj.error) { out.textContent += `\n[ERROR] ${obj.error}`; break; }
+          out.textContent += obj.token || '';
+          out.scrollTop = out.scrollHeight;
+        } catch (_) {}
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError')
+      document.getElementById('ai-output').textContent += `\n[Error] ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✨ AI Analyze';
+    document.getElementById('ai-followup').value = '';
+  }
+}
+
+// ── Responder ─────────────────────────────────────────────────
+
+function openResponder() {
+  document.getElementById('panel-stream-detail').style.display = 'none';
+  document.getElementById('panel-responder').style.display = 'flex';
+
+  // Pre-fill request textarea with first c2s payload
+  if (currentStreamData) {
+    const first = currentStreamData.segments.find(s => s.direction === 'c2s' && s.payload_hex);
+    if (first) {
+      const hex = first.payload_hex.match(/.{1,2}/g).join(' ');
+      document.getElementById('resp-request').value = hex;
+    }
+  }
+}
+
+function closeResponder() {
+  document.getElementById('panel-responder').style.display = 'none';
+  document.getElementById('panel-stream-detail').style.display = 'flex';
+}
+
+async function sendResponder() {
+  const ip      = document.getElementById('resp-ip').value.trim();
+  const port    = parseInt(document.getElementById('resp-port').value);
+  const hexData = document.getElementById('resp-request').value;
+  const timeout = parseFloat(document.getElementById('resp-timeout').value) || 10;
+
+  if (!ip || !port) { alert('Enter target IP and port'); return; }
+  if (!hexData.trim()) { alert('Request is empty'); return; }
+
+  const btn = document.getElementById('btn-resp-send');
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending…';
+  document.getElementById('resp-response').textContent = '';
+  document.getElementById('resp-info').textContent = '';
+
+  try {
+    const result = await api('/api/responder/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_ip: ip, target_port: port, hex_data: hexData, timeout }),
+    });
+
+    document.getElementById('resp-info').textContent =
+      `sent ${result.sent_bytes}B · got ${result.response_length}B`;
+
+    const hex = result.response_hex;
+    if (!hex) {
+      document.getElementById('resp-response').textContent = '(empty response / timeout)';
+      return;
+    }
+    // Format as hex dump
+    const bytes = [];
+    for (let i = 0; i < hex.length; i += 2)
+      bytes.push(parseInt(hex.substr(i, 2), 16));
+
+    let dump = '';
+    for (let i = 0; i < bytes.length; i += 16) {
+      const row   = bytes.slice(i, i + 16);
+      const off   = i.toString(16).padStart(4, '0');
+      const h     = row.map(b => b.toString(16).padStart(2, '0')).join(' ').padEnd(47);
+      const ascii = row.map(b => b >= 32 && b < 127 ? String.fromCharCode(b) : '.').join('');
+      dump += `${off}  ${h}  ${ascii}\n`;
+    }
+    document.getElementById('resp-response').textContent = dump;
+  } catch (e) {
+    document.getElementById('resp-response').textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Send';
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────────
 loadProjects();
