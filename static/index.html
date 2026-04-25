@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FartSuite — TCP Traffic Analyzer</title>
+<style>
+:root {
+  --bg:     #0d1117;
+  --bg2:    #161b22;
+  --bg3:    #21262d;
+  --border: #30363d;
+  --text:   #c9d1d9;
+  --muted:  #8b949e;
+  --accent: #58a6ff;
+  --green:  #3fb950;
+  --red:    #f85149;
+  --yellow: #d29922;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; }
+
+.header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+.logo { font-size: 18px; font-weight: 700; }
+.logo span { color: var(--accent); }
+.header-sub { color: var(--muted); font-size: 13px; }
+
+.container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg3); color: var(--text); cursor: pointer; font-size: 14px; transition: background 0.15s; font-family: inherit; }
+.btn:hover { background: #2d333b; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #2ea043; }
+.btn-danger  { background: #6e1a1a; border-color: var(--red); color: #fff; }
+.btn-danger:hover { background: #9a2424; }
+.btn-sm { padding: 3px 10px; font-size: 12px; }
+
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; }
+.card-header { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; }
+.card-body { padding: 16px; }
+
+.projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-top: 20px; }
+.project-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+.project-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.project-card h3 { font-size: 15px; margin-bottom: 6px; }
+.project-card p { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.project-card .meta { margin-top: 12px; font-size: 12px; color: var(--muted); }
+
+.workspace { display: grid; grid-template-columns: 270px 1fr; gap: 16px; margin-top: 20px; }
+.sidebar { display: flex; flex-direction: column; gap: 12px; }
+.main-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+input, select, textarea {
+  width: 100%; padding: 6px 10px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-size: 14px; outline: none; font-family: inherit;
+}
+input:focus, select:focus { border-color: var(--accent); }
+label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+.form-group { margin-bottom: 12px; }
+
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.badge-running  { background: #0d4429; color: var(--green); border: 1px solid #1a6b3c; }
+.badge-stopped  { background: #1c2128; color: var(--muted); border: 1px solid var(--border); }
+.badge-error    { background: #4a0e10; color: var(--red); border: 1px solid #7a1c1e; }
+.badge-starting { background: #2d1f0e; color: var(--yellow); border: 1px solid #6e4c10; }
+
+.packet-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace; }
+.packet-table th { background: var(--bg3); color: var(--muted); padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); font-weight: 600; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+.packet-table td { padding: 3px 8px; border-bottom: 1px solid rgba(48,54,61,0.4); vertical-align: middle; white-space: nowrap; }
+.packet-table tr:hover td { background: rgba(33,38,45,0.8); }
+.proto-tcp  { color: #58a6ff; font-weight: 600; }
+.proto-udp  { color: #3fb950; font-weight: 600; }
+.proto-icmp { color: #d29922; font-weight: 600; }
+.proto-ipv6 { color: #bc8cff; font-weight: 600; }
+.hex-data { color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+.packet-scroll { height: 420px; overflow-y: auto; border-radius: 0 0 6px 6px; }
+.packet-scroll::-webkit-scrollbar { width: 6px; }
+.packet-scroll::-webkit-scrollbar-track { background: var(--bg); }
+.packet-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 420px; }
+.modal h3 { margin-bottom: 16px; font-size: 16px; }
+
+.alert { padding: 10px 14px; border-radius: 6px; font-size: 13px; }
+.alert-error   { background: #4a0e10; border: 1px solid #7a1c1e; color: var(--red); }
+.alert-success { background: #0d4429; border: 1px solid #1a6b3c; color: var(--green); }
+.alert-info    { background: #0d2137; border: 1px solid #1a4a70; color: #79b8ff; }
+
+.captures-list { display: flex; flex-direction: column; gap: 8px; }
+.capture-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg3); border-radius: 6px; border: 1px solid var(--border); gap: 12px; }
+.capture-name { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+.capture-meta { font-size: 12px; color: var(--muted); }
+
+.flex { display: flex; align-items: center; }
+.gap-8 { gap: 8px; }
+.mt-16 { margin-top: 16px; }
+.text-muted { color: var(--muted); font-size: 13px; }
+.breadcrumb { color: var(--muted); font-size: 14px; margin-bottom: 4px; }
+.breadcrumb a { color: var(--accent); cursor: pointer; }
+.breadcrumb a:hover { text-decoration: underline; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot-green { background: var(--green); }
+.dot-red   { background: var(--red); }
+.dot-gray  { background: var(--muted); }
+.dot-pulse { animation: pulse 1.2s ease-in-out infinite; }
+
+.live-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--green); font-weight: 600; }
+
+.hidden { display: none !important; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">Fart<span>Suite</span></div>
+  <span class="header-sub">TCP Traffic Analyzer</span>
+</div>
+
+<!-- ══ PROJECTS VIEW ══════════════════════════════════════════ -->
+<div id="view-projects" class="container">
+  <div class="flex gap-8 mt-16" style="justify-content: space-between;">
+    <h2>Projects</h2>
+    <button class="btn btn-primary" onclick="showCreateModal()">+ New Project</button>
+  </div>
+  <div id="projects-grid" class="projects-grid">
+    <div class="text-muted">Loading...</div>
+  </div>
+</div>
+
+<!-- ══ PROJECT WORKSPACE ════════════════════════════════════════ -->
+<div id="view-project" class="container hidden">
+  <div class="breadcrumb">
+    <a onclick="showProjectsList()">Projects</a>
+    &nbsp;/&nbsp;<span id="proj-name-bc"></span>
+  </div>
+
+  <div class="workspace">
+    <!-- ── Sidebar ─────────────────────────── -->
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-header">
+          Agent
+          <span id="agent-dot" class="dot dot-gray"></span>
+        </div>
+        <div class="card-body">
+          <button class="btn" style="width:100%;margin-bottom:10px;" onclick="checkAgent()">
+            Check Agent
+          </button>
+          <div id="agent-status-text" class="text-muted" style="font-size:12px;margin-bottom:12px;min-height:16px;"></div>
+
+          <div class="form-group">
+            <label>Interface</label>
+            <select id="iface-select">
+              <option value="">— check agent first —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Filter IP <span style="color:var(--muted)">(optional)</span></label>
+            <input id="filter-ip" type="text" placeholder="e.g. 192.168.1.1">
+          </div>
+          <button class="btn btn-primary" style="width:100%;" id="btn-start-cap" onclick="startCapture()" disabled>
+            ▶ Start Capture
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Main Panel ─────────────────────── -->
+    <div class="main-panel">
+      <!-- Captures list -->
+      <div class="card">
+        <div class="card-header">
+          Captures
+          <button class="btn btn-sm" onclick="loadCaptures()">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="captures-list" class="captures-list">
+            <div class="text-muted">No captures yet.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Packet viewer -->
+      <div class="card" id="packet-panel">
+        <div class="card-header">
+          <span id="packet-panel-title">Packets</span>
+          <div class="flex gap-8">
+            <span id="live-badge" class="live-badge hidden">
+              <span class="dot dot-green dot-pulse"></span>Live
+            </span>
+            <span id="packet-count" class="text-muted" style="font-size:12px;"></span>
+          </div>
+        </div>
+        <div class="packet-scroll" id="packet-scroll">
+          <table class="packet-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Time</th>
+                <th>Proto</th>
+                <th>Source</th>
+                <th>Destination</th>
+                <th>Len</th>
+                <th>Payload (hex)</th>
+              </tr>
+            </thead>
+            <tbody id="packet-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CREATE PROJECT MODAL ═══════════════════════════════════ -->
+<div id="modal-create" class="modal-overlay hidden" onclick="if(event.target===this)hideCreateModal()">
+  <div class="modal">
+    <h3>New Project</h3>
+    <div class="form-group mt-16">
+      <label>Name *</label>
+      <input id="new-proj-name" type="text" placeholder="My Analysis Project"
+             onkeydown="if(event.key==='Enter')createProject()">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <input id="new-proj-desc" type="text" placeholder="Optional description">
+    </div>
+    <div id="create-error" class="alert alert-error hidden" style="margin-bottom:12px;"></div>
+    <div class="flex gap-8" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn" onclick="hideCreateModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="createProject()">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+let currentProjectId = null;
+let liveWs = null;
+let livePacketCount = 0;
+let viewingCaptureId = null;
+const MAX_ROWS = 2000;
+
+// ── Navigation ────────────────────────────────────────────────
+
+function showProjectsList() {
+  show('view-projects');
+  hide('view-project');
+  closeLiveWs();
+  currentProjectId = null;
+  loadProjects();
+}
+
+async function openProject(id) {
+  currentProjectId = id;
+  hide('view-projects');
+  show('view-project');
+
+  const proj = await api(`/api/projects/${id}`);
+  document.getElementById('proj-name-bc').textContent = proj.name;
+
+  // Reset sidebar
+  setAgentStatus('gray', '');
+  document.getElementById('iface-select').innerHTML = '<option value="">— check agent first —</option>';
+  document.getElementById('btn-start-cap').disabled = true;
+  document.getElementById('filter-ip').value = '';
+
+  clearPacketTable();
+  hide('live-badge');
+  document.getElementById('packet-panel-title').textContent = 'Packets';
+
+  await loadCaptures();
+  // Auto-probe agent on project open
+  await checkAgent();
+}
+
+// ── API helpers ───────────────────────────────────────────────
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+// ── Projects ──────────────────────────────────────────────────
+
+async function loadProjects() {
+  const grid = document.getElementById('projects-grid');
+  grid.innerHTML = '<div class="text-muted">Loading...</div>';
+  try {
+    const projects = await api('/api/projects/');
+    if (!projects.length) {
+      grid.innerHTML = '<div class="text-muted">No projects yet. Create one to get started.</div>';
+      return;
+    }
+    grid.innerHTML = projects.map(p => `
+      <div class="project-card" onclick="openProject(${p.id})">
+        <h3>${esc(p.name)}</h3>
+        <p>${esc(p.description || 'No description')}</p>
+      </div>
+    `).join('');
+  } catch (e) {
+    grid.innerHTML = `<div class="alert alert-error">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function showCreateModal() {
+  show('modal-create');
+  document.getElementById('new-proj-name').focus();
+}
+
+function hideCreateModal() {
+  hide('modal-create');
+  hide('create-error');
+  document.getElementById('new-proj-name').value = '';
+  document.getElementById('new-proj-desc').value = '';
+}
+
+async function createProject() {
+  const name = document.getElementById('new-proj-name').value.trim();
+  const desc = document.getElementById('new-proj-desc').value.trim();
+  if (!name) { document.getElementById('new-proj-name').focus(); return; }
+  try {
+    await api('/api/projects/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: desc || null }),
+    });
+    hideCreateModal();
+    await loadProjects();
+  } catch (e) {
+    const el = document.getElementById('create-error');
+    el.textContent = e.message;
+    show('create-error');
+  }
+}
+
+// ── Agent ─────────────────────────────────────────────────────
+
+async function checkAgent() {
+  setAgentStatus('gray', 'Checking agent...');
+  try {
+    const data = await api('/api/agent/check');
+    const count = (data.interfaces || []).length;
+    setAgentStatus('green', `Agent OK — ${count} interface(s)`);
+
+    const sel = document.getElementById('iface-select');
+    sel.innerHTML = '<option value="">Select interface...</option>' +
+      (data.interfaces || []).map(i =>
+        `<option value="${escAttr(i.name)}">${esc(i.name)}${i.description ? ' — ' + esc(i.description.substring(0, 40)) : ''}</option>`
+      ).join('');
+    document.getElementById('btn-start-cap').disabled = false;
+  } catch (e) {
+    setAgentStatus('red', `Unavailable: ${e.message}`);
+    document.getElementById('btn-start-cap').disabled = true;
+  }
+}
+
+function setAgentStatus(color, text) {
+  document.getElementById('agent-dot').className = `dot dot-${color}`;
+  document.getElementById('agent-status-text').textContent = text;
+}
+
+// ── Captures ──────────────────────────────────────────────────
+
+async function loadCaptures() {
+  if (!currentProjectId) return;
+  const list = document.getElementById('captures-list');
+  try {
+    const captures = await api(`/api/projects/${currentProjectId}/captures/`);
+    if (!captures.length) {
+      list.innerHTML = '<div class="text-muted">No captures yet.</div>';
+      return;
+    }
+    list.innerHTML = captures.reverse().map(c => {
+      const isRunning = c.status === 'running';
+      return `
+        <div class="capture-row">
+          <div style="flex:1;min-width:0;">
+            <div class="capture-name">#${c.id} — ${esc(c.interface)}</div>
+            <div class="capture-meta">
+              ${c.filter_ip ? 'Filter: ' + esc(c.filter_ip) + ' &nbsp;·&nbsp; ' : ''}
+              ${c.packets_count || 0} packets
+            </div>
+          </div>
+          <div class="flex gap-8" style="align-items:center;flex-shrink:0;">
+            <span class="badge badge-${c.status}">${c.status}</span>
+            ${isRunning
+              ? `<button class="btn btn-sm" onclick="connectLive(${c.id})">Live</button>
+                 <button class="btn btn-sm btn-danger" onclick="stopCapture(${c.id})">Stop</button>`
+              : `<button class="btn btn-sm" onclick="viewDump(${c.id})">View</button>`
+            }
+            <button class="btn btn-sm btn-danger" onclick="deleteCapture(${c.id})" title="Delete capture and all packets">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+}
+
+async function startCapture() {
+  const iface = document.getElementById('iface-select').value;
+  const filterIp = document.getElementById('filter-ip').value.trim();
+  if (!iface) { alert('Select an interface first.'); return; }
+
+  document.getElementById('btn-start-cap').disabled = true;
+  try {
+    const capture = await api(`/api/projects/${currentProjectId}/captures/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interface: iface, filter_ip: filterIp || null }),
+    });
+    await loadCaptures();
+    connectLive(capture.id);
+  } catch (e) {
+    alert('Error starting capture: ' + e.message);
+  } finally {
+    document.getElementById('btn-start-cap').disabled = false;
+  }
+}
+
+async function stopCapture(captureId) {
+  try {
+    await api(`/api/captures/${captureId}/stop`, { method: 'POST' });
+    if (viewingCaptureId === captureId) {
+      closeLiveWs();
+      hide('live-badge');
+    }
+    await loadCaptures();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ── Delete Capture ────────────────────────────────────────────
+
+async function deleteCapture(captureId) {
+  if (!confirm(`Delete capture #${captureId} and all its packets?`)) return;
+  try {
+    await api(`/api/captures/${captureId}`, { method: 'DELETE' });
+    if (viewingCaptureId === captureId) {
+      closeLiveWs();
+      hide('live-badge');
+      clearPacketTable();
+      document.getElementById('packet-panel-title').textContent = 'Packets';
+      viewingCaptureId = null;
+    }
+    await loadCaptures();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ── Live View ─────────────────────────────────────────────────
+
+function connectLive(captureId) {
+  closeLiveWs();
+  viewingCaptureId = captureId;
+  clearPacketTable();
+
+  document.getElementById('packet-panel-title').textContent = `Live — Capture #${captureId}`;
+  show('live-badge');
+
+  const wsUrl = `ws://${location.host}/ws/client/${captureId}`;
+  liveWs = new WebSocket(wsUrl);
+
+  liveWs.onmessage = e => {
+    try { appendRow(JSON.parse(e.data)); } catch (_) {}
+  };
+
+  liveWs.onclose = () => {
+    hide('live-badge');
+    // Refresh captures list to update status badge
+    loadCaptures();
+  };
+
+  liveWs.onerror = () => { hide('live-badge'); };
+}
+
+function closeLiveWs() {
+  if (liveWs) {
+    liveWs.onclose = null;
+    liveWs.close();
+    liveWs = null;
+  }
+}
+
+// ── Dump View ─────────────────────────────────────────────────
+
+async function viewDump(captureId) {
+  closeLiveWs();
+  viewingCaptureId = captureId;
+  clearPacketTable();
+  document.getElementById('packet-panel-title').textContent = `Dump — Capture #${captureId}`;
+  hide('live-badge');
+
+  try {
+    const packets = await api(`/api/captures/${captureId}/packets/?limit=500`);
+    if (!packets.length) {
+      document.getElementById('packet-count').textContent = 'No packets recorded';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="7" style="text-align:center;padding:24px;color:var(--muted);">No packets captured for this session</td>`;
+      document.getElementById('packet-tbody').appendChild(tr);
+      return;
+    }
+    for (const pkt of packets) appendRow(pkt);
+    document.getElementById('packet-count').textContent =
+      `${packets.length} packet${packets.length !== 1 ? 's' : ''}`;
+  } catch (e) {
+    alert('Error loading packets: ' + e.message);
+  }
+}
+
+// ── Packet Table ──────────────────────────────────────────────
+
+function clearPacketTable() {
+  document.getElementById('packet-tbody').innerHTML = '';
+  livePacketCount = 0;
+  document.getElementById('packet-count').textContent = '';
+}
+
+const PROTO_CLASS = { TCP: 'proto-tcp', UDP: 'proto-udp', ICMP: 'proto-icmp', IPv6: 'proto-ipv6' };
+
+function appendRow(pkt) {
+  const tbody = document.getElementById('packet-tbody');
+  while (tbody.rows.length >= MAX_ROWS) tbody.deleteRow(0);
+
+  livePacketCount++;
+  const ts   = pkt.timestamp ? new Date(pkt.timestamp * 1000).toISOString().slice(11, 23) : '';
+  const src  = fmt(pkt.src_ip, pkt.src_port);
+  const dst  = fmt(pkt.dst_ip, pkt.dst_port);
+  const proto = pkt.protocol || '?';
+  const pc   = PROTO_CLASS[proto] || '';
+  const hex  = (pkt.data || '').slice(0, 80) + ((pkt.data || '').length > 80 ? '…' : '');
+
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${livePacketCount}</td>
+    <td>${ts}</td>
+    <td class="${pc}">${esc(proto)}</td>
+    <td>${esc(src)}</td>
+    <td>${esc(dst)}</td>
+    <td>${pkt.length || 0}</td>
+    <td class="hex-data" title="${escAttr(pkt.data || '')}">${esc(hex)}</td>`;
+  tbody.appendChild(tr);
+
+  document.getElementById('packet-count').textContent = `${livePacketCount} packets`;
+
+  // Auto-scroll only if near bottom
+  const scroll = document.getElementById('packet-scroll');
+  if (scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 60) {
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+}
+
+function fmt(ip, port) {
+  if (!ip) return '—';
+  return port ? `${ip}:${port}` : ip;
+}
+
+// ── Utilities ─────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) {
+  return String(s ?? '').replace(/"/g,'&quot;');
+}
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ── Init ──────────────────────────────────────────────────────
+loadProjects();
+</script>
+</body>
+</html>
